@@ -83,6 +83,57 @@ export function mergeProfiles(
   }
 }
 
+/**
+ * Adapt a frontend Scheme object into the SchemeModel shape expected by
+ * chatbot formatters and the OpenAI prompt builder.
+ * Scheme uses: name, applyUrl, officialUrl, rules
+ * SchemeModel uses: scheme_name, apply_link, official_link, filters, application_process
+ */
+export function toSchemeModel(scheme: Scheme): any {
+  return {
+    id: scheme.id,
+    scheme_name: scheme.name,
+    category: scheme.category,
+    beneficiaries: [],
+    state: 'Central',
+    income_limit: (scheme.rules as any)?.incomeLimit ?? null,
+    age_limit: {
+      min: (scheme.rules as any)?.minAge ?? null,
+      max: (scheme.rules as any)?.maxAge ?? null,
+    },
+    eligibility: scheme.benefits,   // best approximation available on Scheme
+    benefits: scheme.benefits,
+    documents: scheme.documents,
+    application_process: [],
+    apply_link: scheme.applyUrl,
+    official_link: scheme.officialUrl,
+    source: scheme.ministry,
+    last_date: scheme.deadline ?? null,
+    filters: scheme.rules ?? {},
+    // Carry through all locale variants so getTranslatedProp() can access them
+    nameHi: scheme.nameHi,
+    nameTe: (scheme as any).nameTe,
+    nameTa: (scheme as any).nameTa,
+    nameKn: (scheme as any).nameKn,
+    nameMl: (scheme as any).nameMl,
+    benefitsHi: (scheme as any).benefitsHi,
+    benefitsTe: (scheme as any).benefitsTe,
+    benefitsTa: (scheme as any).benefitsTa,
+    benefitsKn: (scheme as any).benefitsKn,
+    benefitsMl: (scheme as any).benefitsMl,
+    documentsHi: (scheme as any).documentsHi,
+    documentsTe: (scheme as any).documentsTe,
+    documentsTa: (scheme as any).documentsTa,
+    documentsKn: (scheme as any).documentsKn,
+    documentsMl: (scheme as any).documentsMl,
+    // Keep the original Scheme fields so eligibility-service.ts rule checks still work
+    name: scheme.name,
+    applyUrl: scheme.applyUrl,
+    officialUrl: scheme.officialUrl,
+    rules: scheme.rules,
+  }
+}
+
 function normalize(value: string): string {
   return value.toLowerCase().replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim()
 }

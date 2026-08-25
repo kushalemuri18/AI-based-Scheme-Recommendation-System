@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 import argparse, json
 from pathlib import Path
 import joblib, pandas as pd
@@ -13,7 +13,14 @@ DROP={'profile_id','fullName','scheme_name','eligible','partial','eligibility_sc
 def main():
  p=argparse.ArgumentParser(description='Train the XGBoost eligibility classifier.'); p.add_argument('--trees',type=int,default=300); a=p.parse_args()
  d=pd.read_csv(ROOT/'data/dataset.csv'); f=[c for c in d if c not in DROP]; n=['age','familyIncome','parentGuardianIncome']; c=[x for x in f if x not in n]
- xtr,xte,ytr,yte=train_test_split(d[f],d.eligible.astype(int),test_size=.2,random_state=42,stratify=d.eligible)
+ unique_profiles=d['profile_id'].unique()
+ train_profiles,test_profiles=train_test_split(unique_profiles,test_size=.2,random_state=42)
+ train_mask=d['profile_id'].isin(train_profiles)
+ test_mask=d['profile_id'].isin(test_profiles)
+ xtr=d[train_mask][f]
+ ytr=d[train_mask].eligible.astype(int)
+ xte=d[test_mask][f]
+ yte=d[test_mask].eligible.astype(int)
  ratio=(ytr==0).sum()/(ytr==1).sum()
  model=XGBClassifier(n_estimators=a.trees,max_depth=8,learning_rate=.08,subsample=.9,colsample_bytree=.9,scale_pos_weight=ratio,objective='binary:logistic',eval_metric='logloss',tree_method='hist',n_jobs=1,random_state=42)
  pipe=Pipeline([('pre',ColumnTransformer([('num','passthrough',n),('cat',OneHotEncoder(handle_unknown='ignore'),c)])),('xgb',model)])

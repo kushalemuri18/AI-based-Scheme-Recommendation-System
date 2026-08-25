@@ -11,8 +11,30 @@ interface EligibilityContextType {
 const EligibilityContext = createContext<EligibilityContextType | undefined>(undefined)
 
 export function EligibilityProvider({ children }: { children: ReactNode }) {
-  const [profile, setProfile] = useState<UserProfile | null>(null)
-  const [results, setResults] = useState<EligibilityResult[]>([])
+  const [profile, setProfile] = useState<UserProfile | null>(() => {
+    try {
+      const stored = sessionStorage.getItem('schemeai-results')
+      if (stored) {
+        const parsed = JSON.parse(stored)
+        return parsed.profile || null
+      }
+    } catch (e) {
+      console.error('Failed to parse profile from sessionStorage:', e)
+    }
+    return null
+  })
+  const [results, setResults] = useState<EligibilityResult[]>(() => {
+    try {
+      const stored = sessionStorage.getItem('schemeai-results')
+      if (stored) {
+        const parsed = JSON.parse(stored)
+        return parsed.results || []
+      }
+    } catch (e) {
+      console.error('Failed to parse results from sessionStorage:', e)
+    }
+    return []
+  })
 
   const setEligibilityData = (p: UserProfile, r: EligibilityResult[]) => {
     setProfile(p)

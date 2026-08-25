@@ -14,7 +14,7 @@ export const aboutYourselfSchema = z.object({
   fullName: z.string().max(100).optional(),
   age: z.number({ error: 'Age is required' }).min(1, 'Age is required').max(120, 'Invalid age'),
   gender: z.enum(['Male', 'Female', 'Other']),
-  maritalStatus: z.enum(['Single', 'Married', 'Widowed', 'Divorced']),
+  maritalStatus: z.enum(['Single', 'Married', 'Widowed', 'Divorced', 'Never Married', 'Separated', '']).default(''),
 })
 
 /** Page 2 (step 1) – Social / Caste Details */
@@ -25,6 +25,7 @@ export const socialDetailsSchema = z.object({
 /** Page 3 (step 2) – Economic Details */
 export const economicDetailsSchema = z.object({
   occupation: z.string().min(1, 'Please select your occupation!'),
+  individualIncome: z.number().min(0).max(100000000).optional(),
   familyIncome: z.number().min(0).max(100000000).optional(),
   parentGuardianIncome: z.number().min(0).max(100000000).optional(),
   bplStatus: z.boolean(),
@@ -78,13 +79,29 @@ export const eligibilityFormSchema = aboutYourselfSchema
   .merge(disabilityMinoritySchema)
   .merge(studentEmploymentSchema)
   .merge(economicDetailsSchema)
-  .merge(educationDetailsSchema)
   .merge(otherFiltersSchema)
   .refine((data) => {
-    // If not a student and not a government employee:
-    if (!data.isStudent && !(data.employmentStatus === 'Employed' && data.isGovernmentEmployee)) {
+    if (data.isStudent === false && data.employmentStatus === 'Employed' && data.isGovernmentEmployee === true) {
+      return data.individualIncome !== undefined && !isNaN(data.individualIncome) && data.individualIncome >= 0
+    }
+    return true
+  }, {
+    message: 'Individual income is required',
+    path: ['individualIncome'],
+  })
+  .refine((data) => {
+    if (data.isStudent === false && data.employmentStatus === 'Employed' && data.isGovernmentEmployee === true) {
+      return data.familyIncome !== undefined && !isNaN(data.familyIncome) && data.familyIncome >= 0
+    }
+    return true
+  }, {
+    message: 'Family income is required',
+    path: ['familyIncome'],
+  })
+  .refine((data) => {
+    if (!(data.employmentStatus === 'Employed' && data.isGovernmentEmployee)) {
       if (data.bplStatus === false) {
-        return data.familyIncome !== undefined && !isNaN(data.familyIncome) && data.familyIncome > 0
+        return data.familyIncome !== undefined && !isNaN(data.familyIncome) && data.familyIncome >= 0
       }
     }
     return true
@@ -92,19 +109,27 @@ export const eligibilityFormSchema = aboutYourselfSchema
     message: 'Income is required',
     path: ['familyIncome'],
   })
+  .refine((data) => {
+    if (data.gender === 'Female') {
+      return data.maritalStatus !== undefined && data.maritalStatus !== ''
+    }
+    return true
+  }, {
+    message: 'Please select your marital status',
+    path: ['maritalStatus'],
+  })
 
 export type EligibilityFormData = z.infer<typeof eligibilityFormSchema>
 
 // ─── Step definitions (index MUST match the UI step 0–7) ────────────────────
 
 export const FORM_STEPS = [
-  { id: 'personal',           title: 'Personal Details',          titleHi: 'व्यक्तिगत विवरण', schema: aboutYourselfSchema },
-  { id: 'location',           title: 'Location Details',          titleHi: 'स्थान विवरण',      schema: locationDetailsSchema },
-  { id: 'social',             title: 'Social Details',            titleHi: 'सामाजिक विवरण',   schema: socialDetailsSchema },
+  { id: 'personal', title: 'Personal Details', titleHi: 'व्यक्तिगत विवरण', schema: aboutYourselfSchema },
+  { id: 'location', title: 'Location Details', titleHi: 'स्थान विवरण', schema: locationDetailsSchema },
+  { id: 'social', title: 'Social Details', titleHi: 'सामाजिक विवरण', schema: socialDetailsSchema },
   { id: 'disabilityMinority', title: 'Disability & Minority Info', titleHi: 'दिव्यांगता और अल्पसंख्यक विवरण', schema: disabilityMinoritySchema },
-  { id: 'studentEmployment',  title: 'Student & Employment Info', titleHi: 'छात्र और रोजगार विवरण', schema: studentEmploymentSchema },
-  { id: 'economic',           title: 'Economic Details',          titleHi: 'आर्थिक विवरण',     schema: economicDetailsSchema },
-  { id: 'preferences',        title: 'Preferences',               titleHi: 'प्राथमिकताएँ',      schema: otherFiltersSchema },
+  { id: 'studentEmployment', title: 'Student & Employment Info', titleHi: 'छात्र और रोजगार विवरण', schema: studentEmploymentSchema },
+  { id: 'economic', title: 'Economic Details', titleHi: 'आर्थिक विवरण', schema: economicDetailsSchema },
 ] as const
 
 export const DRAFT_STORAGE_KEY = 'schemeai-eligibility-draft'

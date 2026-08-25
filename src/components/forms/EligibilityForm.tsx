@@ -1,13 +1,12 @@
 import { zodResolver } from '@hookform/resolvers/zod'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Info, Save } from 'lucide-react'
+import { Save } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Progress } from '@/components/ui/progress'
@@ -15,59 +14,43 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useEligibility } from '@/contexts/EligibilityContext'
 import { useNotifications } from '@/contexts/NotificationContext'
 import { INDIAN_STATES } from '@/data/states'
-import { getAllSchemes } from '@/lib/scheme-service'
 
 import {
   DRAFT_STORAGE_KEY,
   eligibilityFormSchema,
   FORM_STEPS,
-  PREFERRED_SCHEME_CATEGORIES,
   type EligibilityFormData,
 } from '@/lib/form-schema'
-import { evaluateAllSchemes } from '@/lib/eligibility-engine'
-import type { UserProfile, Scheme, SchemeCategory } from '@/types'
+import { predictEligibility } from '@/lib/ml-eligibility-service'
+import type { UserProfile } from '@/types'
 
-const PREFERRED_CATEGORY_MAP: Record<(typeof PREFERRED_SCHEME_CATEGORIES)[number], SchemeCategory[]> = {
-  Education: ['Education'],
-  Health: ['Health'],
-  Agriculture: ['Agriculture'],
-  Employment: ['Employment', 'Skills & Employment'],
-  Housing: ['Housing'],
-  Women: ['Women', 'Women & Child'],
-  'Senior Citizen': ['Senior Citizen', 'Senior Citizen Welfare'],
-  Startup: ['Startup', 'Business & Entrepreneurship'],
-  'Skill Development': ['Skill Development', 'Skills & Employment'],
-  'Social Welfare': ['Social Welfare', 'Disability Welfare', 'Animal Husbandry & Fisheries', 'Traditional Crafts & Artisans'],
-}
+
 
 const UNKNOWN_INCOME = 100_000_001
 
-function matchesPreferredCategory(scheme: Scheme, categories: EligibilityFormData['preferredCategories']): boolean {
-  return categories.some((category) => PREFERRED_CATEGORY_MAP[category].includes(scheme.category))
-}
+
 
 const defaultValues: EligibilityFormData = {
   // Page 1 – Personal
   fullName: '',
   age: 25,
   gender: 'Male',
-  maritalStatus: 'Single',
+  maritalStatus: '' as any,
   disabilityStatus: false,
   disabilityPercentage: '',
   // Page 2 – Social
   casteCategory: 'General',
   // Page 3 – Economic
   occupation: '',
-  familyIncome: 0,
-  parentGuardianIncome: 0,
+  individualIncome: undefined as any,
+  familyIncome: undefined as any,
+  parentGuardianIncome: undefined as any,
   employmentStatus: 'Employed',
   bplStatus: false,
   isInHardship: false,
   isGovernmentEmployee: false,
   // Page 4 – Education
   isStudent: false,
-  qualification: 'Graduate',
-  collegeType: 'NA',
   // Page 5 – Location
   state: '',
   district: '',
@@ -91,7 +74,28 @@ export function EligibilityForm() {
   const { addNotification } = useNotifications()
   const [step, setStep] = useState(0)
   const [draftSaved, setDraftSaved] = useState(false)
-  const [activeInfo, setActiveInfo] = useState<string | null>(null)
+  const [isSubmitting, setIsSubmitting] = useState(false)
+
+  const getErrorMessage = (err: any) => {
+    if (!err) return ''
+    const msg = err.message
+    if (msg === 'Age is required') return t('form.errors.ageRequired')
+    if (msg === 'Invalid age') return t('form.errors.invalidAge')
+    if (msg === 'Please select your occupation!') return t('form.errors.occupationRequired')
+    if (msg === 'State is required') return t('form.errors.stateRequired')
+    if (msg === 'Income is required') return t('form.errors.incomeRequired')
+    if (msg === 'Please select your marital status') return t('form.errors.maritalStatusRequired')
+    if (msg === 'Please select your self employment type') return t('form.errors.selfEmploymentTypeRequired')
+    return t(msg)
+  }
+
+  const yesLabel = ({
+    en: 'Yes', hi: 'हाँ', te: 'అవును', kn: 'ಹೌದು', ml: 'അതെ', ta: 'ஆம்'
+  } as Record<string, string>)[i18n.language.split('-')[0] || 'en'] || 'Yes'
+
+  const noLabel = ({
+    en: 'No', hi: 'नहीं', te: 'కాదు', kn: 'ಇಲ್ಲ', ml: 'അല്ല', ta: 'இல்லை'
+  } as Record<string, string>)[i18n.language.split('-')[0] || 'en'] || 'No'
 
   const form = useForm<EligibilityFormData>({
     resolver: zodResolver(eligibilityFormSchema) as any,
@@ -121,10 +125,6 @@ export function EligibilityForm() {
   const isSeniorCitizen = watch('isSeniorCitizen')
   const isMinority = watch('isMinority')
   const isStartupOwner = watch('isStartupOwner')
-  const skillDevelopmentInterest = watch('skillDevelopmentInterest')
-  const isArtisan = watch('isArtisan')
-  const isAnimalHusbandryOrFisheries = watch('isAnimalHusbandryOrFisheries')
-  const preferredCategories = Array.isArray(watch('preferredCategories')) ? watch('preferredCategories') : []
 
 
   // Load saved draft on mount
@@ -169,14 +169,16 @@ export function EligibilityForm() {
     if (employmentStatus === 'Startup Owner' && !isStartupOwner) setValue('isStartupOwner', true)
   }, [age, maritalStatus, employmentStatus, isSeniorCitizen, isWidow, isStudent, isFarmer, isStartupOwner, setValue])
 
+  useEffect(() => {
+    if (gender !== 'Female') {
+      setValue('maritalStatus', 'Single')
+    } else {
+      setValue('maritalStatus', '' as any)
+    }
+  }, [gender, setValue])
 
-
-  // Dynamically calculate active steps. If the user is a student, we skip Page 6 (Economic Details, index 5).
-  const activeStepIndices = [0, 1, 2, 3, 4]
-  if (!isStudent) {
-    activeStepIndices.push(5)
-  }
-  activeStepIndices.push(6)
+  // Dynamically calculate active steps. All steps are active for all profiles.
+  const activeStepIndices = [0, 1, 2, 3, 4, 5]
 
   const activeStepIndex = activeStepIndices.indexOf(step)
   const totalActiveSteps = activeStepIndices.length
@@ -190,9 +192,11 @@ export function EligibilityForm() {
     if (!valid) {
       const errs = form.formState.errors
       const messages = Object.entries(errs)
-        .map(([k, v]) => `${k}: ${(v as any).message || 'Invalid value'}`)
+        .filter(([k]) => fields.includes(k))
+        .map(([k, v]) => `${t('form.fields.' + k, k)}: ${getErrorMessage(v) || 'Invalid value'}`)
         .join('\n')
-      alert("Please fix the following validation errors to continue:\n" + messages)
+      const localizedErrorHeader = t('form.validationErrorHeader', 'Please fix the following validation errors to continue:')
+      alert(localizedErrorHeader + "\n" + messages)
     }
     if (valid) {
       const currentIndex = activeStepIndices.indexOf(step)
@@ -209,52 +213,112 @@ export function EligibilityForm() {
     }
   }
 
-  const onSubmit = handleSubmit((data: EligibilityFormData) => {
-    // Occupation is the form's primary source for these scheme-specific flags.
-    // This also clears a stale flag left over from a previously saved draft.
-    const occupationFlags = {
-      isFarmer: data.occupation === 'Farmer / Agricultural Worker',
-      isArtisan: data.occupation === 'Artisan / Craftsman / Weaver',
-      isAnimalHusbandryOrFisheries: data.occupation === 'Involved in Animal Husbandry / Fisheries',
-      isStartupOwner: data.occupation === 'Startup Owner / Entrepreneur',
+  const onSubmit = handleSubmit(async (data: EligibilityFormData) => {
+    setIsSubmitting(true)
+    try {
+      // Occupation is the form's primary source for these scheme-specific flags.
+      // This also clears a stale flag left over from a previously saved draft.
+      const occupationFlags = {
+        isFarmer: data.occupation === 'Farmer / Agricultural Worker',
+        isArtisan: data.occupation === 'Artisan / Craftsman / Weaver',
+        isAnimalHusbandryOrFisheries: data.occupation === 'Involved in Animal Husbandry / Fisheries',
+        isStartupOwner: data.occupation === 'Startup Owner / Entrepreneur',
+      }
+      const mappedEmploymentStatus = data.isStudent
+        ? 'Student'
+        : occupationFlags.isFarmer
+          ? 'Farmer'
+          : occupationFlags.isStartupOwner
+            ? 'Startup Owner'
+            : data.employmentStatus
+
+      // A blank income means it was not supplied; it is never interpreted as
+      // zero income. Parent/guardian income is used for student applicants.
+      const verifiedIncome = data.familyIncome ?? data.parentGuardianIncome ?? UNKNOWN_INCOME
+      
+      let mappedGender: 'Male' | 'Female' | 'Other' = data.gender
+      let mappedMaritalStatus: 'Single' | 'Married' | 'Widowed' | 'Divorced' = 'Single'
+      if (data.maritalStatus === 'Married') mappedMaritalStatus = 'Married'
+      else if (data.maritalStatus === 'Widowed') mappedMaritalStatus = 'Widowed'
+      else if (data.maritalStatus === 'Divorced' || data.maritalStatus === 'Separated') mappedMaritalStatus = 'Divorced'
+      else mappedMaritalStatus = 'Single' // 'Never Married' -> 'Single'
+
+      const profile: UserProfile = {
+        ...data,
+        gender: mappedGender,
+        maritalStatus: mappedMaritalStatus,
+        familyIncome: verifiedIncome,
+        employmentStatus: mappedEmploymentStatus,
+        qualification: 'Graduate',
+        collegeType: 'NA',
+        ...occupationFlags,
+      } as UserProfile
+
+      // Query the XGBoost-based ML service
+      const allResults = await predictEligibility(profile)
+      let results = allResults
+      const occ = data.occupation
+      if (occ === 'Farmer / Agricultural Worker') {
+        results = allResults.filter(
+          (r) => r.scheme.category === 'Agriculture' || r.scheme.rules?.farmerOnly === true
+        )
+      } else if (occ === 'Artisan / Craftsman / Weaver') {
+        results = allResults.filter(
+          (r) =>
+            r.scheme.rules?.artisanOnly === true ||
+            r.scheme.name.toLowerCase().includes('artisan') ||
+            r.scheme.name.toLowerCase().includes('vishwakarma')
+        )
+      } else if (occ === 'Involved in Animal Husbandry / Fisheries') {
+        results = allResults.filter(
+          (r) =>
+            r.scheme.rules?.husbandryOrFisheriesOnly === true ||
+            r.scheme.name.toLowerCase().includes('husbandry') ||
+            r.scheme.name.toLowerCase().includes('fisheries') ||
+            r.scheme.name.toLowerCase().includes('matsya')
+        )
+      } else if (occ === 'Startup Owner / Entrepreneur') {
+        results = allResults.filter(
+          (r) =>
+            r.scheme.category === 'Business & Entrepreneurship' ||
+            r.scheme.rules?.startupOwnerOnly === true ||
+            r.scheme.name.toLowerCase().includes('mudra') ||
+            r.scheme.name.toLowerCase().includes('startup') ||
+            r.scheme.name.toLowerCase().includes('pmegp')
+        )
+      } else {
+        // Exclude specific farmer, artisan, husbandry, and startup schemes
+        results = allResults.filter(
+          (r) =>
+            !r.scheme.rules?.farmerOnly &&
+            !r.scheme.rules?.artisanOnly &&
+            !r.scheme.rules?.husbandryOrFisheriesOnly &&
+            !r.scheme.rules?.startupOwnerOnly &&
+            r.scheme.category !== 'Agriculture'
+        )
+      }
+
+      setEligibilityData(profile, results)
+      localStorage.removeItem(DRAFT_STORAGE_KEY)
+      addNotification(
+        'Eligibility Check Complete',
+        `Found ${results.length} matching schemes for your profile.`,
+        'success',
+      )
+      navigate('/results')
+    } catch (error: any) {
+      addNotification(
+        'Eligibility Check Failed',
+        error.message || 'AI eligibility service is currently unavailable. Please try again.',
+        'error',
+      )
+    } finally {
+      setIsSubmitting(false)
     }
-    const mappedEmploymentStatus = data.isStudent
-      ? 'Student'
-      : occupationFlags.isFarmer
-        ? 'Farmer'
-        : occupationFlags.isStartupOwner
-          ? 'Startup Owner'
-          : data.employmentStatus
-
-    // A blank income means it was not supplied; it is never interpreted as
-    // zero income. Parent/guardian income is used for student applicants.
-    const verifiedIncome = data.familyIncome ?? data.parentGuardianIncome ?? UNKNOWN_INCOME
-    const profile: UserProfile = {
-      ...data,
-      familyIncome: verifiedIncome,
-      employmentStatus: mappedEmploymentStatus,
-      ...occupationFlags,
-    } as UserProfile
-
-    // The scheme rules are the source of truth. An ML score is useful for
-    // analysis, but must never replace programme requirements.
-    const allResults = evaluateAllSchemes(getAllSchemes(), profile)
-    const results = data.preferredCategories.length > 0
-      ? allResults.filter((result) => matchesPreferredCategory(result.scheme, data.preferredCategories))
-      : allResults
-
-    setEligibilityData(profile, results)
-    localStorage.removeItem(DRAFT_STORAGE_KEY)
-    addNotification(
-      'Eligibility Check Complete',
-      `Found ${results.length} matching schemes for your profile.`,
-      'success',
-    )
-    navigate('/results')
   })
 
   const currentStep = FORM_STEPS[step]
-  const stepTitle = i18n.language === 'hi' ? currentStep.titleHi : currentStep.title
+  const stepTitle = t('form.steps.' + currentStep.id, currentStep.title)
 
   return (
     <Card className="mx-auto max-w-2xl">
@@ -285,29 +349,91 @@ export function EligibilityForm() {
             >
               {/* ── PAGE 1: Personal Details ────────────────────────────── */}
               {step === 0 && (
-                <>
-
-
-                  {/* Age + Gender */}
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    <div className="space-y-2">
-                      <Label htmlFor="age" className="text-base font-semibold"><span className="text-destructive">*</span> Age</Label>
-                      <Input id="age" type="number" min={1} max={120} {...register('age', { valueAsNumber: true })} className="h-11" />
-                      {errors.age && <p className="text-sm text-destructive">{errors.age.message}</p>}
+                <div className="space-y-6">
+                  {/* Gender Selector Cards */}
+                  <div className="space-y-3">
+                    <Label className="text-base font-semibold">
+                      <span className="text-destructive">*</span>{t('form.fields.genderTellUs', 'Tell us about yourself, you are a...')}
+                    </Label>
+                    <div className="grid grid-cols-3 gap-4">
+                      {([
+                        { value: 'Male', label: t('form.options.gender.Male', 'Male') },
+                        { value: 'Female', label: t('form.options.gender.Female', 'Female') },
+                        { value: 'Other', label: t('form.options.gender.Other', 'Others') }
+                      ] as const).map((opt) => {
+                        const isSelected = gender === opt.value
+                        return (
+                          <button
+                            key={opt.value}
+                            type="button"
+                            onClick={() => setValue('gender', opt.value, { shouldDirty: true, shouldValidate: true })}
+                            className={`h-11 rounded-md border-2 px-4 text-center text-base font-medium transition-colors ${
+                              isSelected
+                                ? 'border-green-600 bg-green-50/10 text-green-600 font-semibold'
+                                : 'border-border bg-card hover:border-muted-foreground'
+                            }`}
+                          >
+                            {opt.label}
+                          </button>
+                        )
+                      })}
                     </div>
-                    <div className="space-y-2">
-                      <Label className="text-base font-semibold"><span className="text-destructive">*</span> Gender</Label>
-                      <Select value={gender} onValueChange={(v) => setValue('gender', v as EligibilityFormData['gender'], { shouldDirty: true, shouldValidate: true })}>
-                        <SelectTrigger className="h-11"><SelectValue /></SelectTrigger>
-                        <SelectContent>
-                          {['Male', 'Female', 'Other'].map((g) => <SelectItem key={g} value={g}>{g}</SelectItem>)}
-                        </SelectContent>
-                      </Select>
-                    </div>
+                    {errors.gender && <p className="text-sm text-destructive">{getErrorMessage(errors.gender)}</p>}
                   </div>
 
+                  {/* Age Dropdown Selector */}
+                  <div className="space-y-2">
+                    <div className="flex flex-wrap items-center gap-2 text-base font-semibold">
+                      <span className="text-destructive">*</span>
+                      <span>{t('form.fields.ageLabelPrefix', 'and your age is')}</span>
+                      <Select
+                        value={String(age || '')}
+                        onValueChange={(v) => setValue('age', Number(v), { shouldDirty: true, shouldValidate: true })}
+                      >
+                        <SelectTrigger className="w-24 h-10">
+                          <SelectValue placeholder="--" />
+                        </SelectTrigger>
+                        <SelectContent className="max-h-60 overflow-y-auto">
+                          {Array.from({ length: 103 }, (_, i) => i + 18).map((a) => (
+                            <SelectItem key={a} value={String(a)}>{a}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <span>{t('form.fields.ageLabelSuffix', 'years')}</span>
+                    </div>
+                    {errors.age && <p className="text-sm text-destructive">{getErrorMessage(errors.age)}</p>}
+                  </div>
 
-                </>
+                  {/* Conditional Marital Status */}
+                  {gender === 'Female' && (
+                    <div className="space-y-2 pt-2 animate-in fade-in slide-in-from-top-2 duration-200">
+                      <Label className="text-base font-semibold">
+                        <span className="text-destructive">*</span>{t('form.fields.maritalStatus', 'What is your marital status?')}
+                      </Label>
+                      <Select
+                        value={maritalStatus}
+                        onValueChange={(v) => setValue('maritalStatus', v as any, { shouldDirty: true, shouldValidate: true })}
+                      >
+                        <SelectTrigger className="h-11">
+                          <SelectValue placeholder={t('form.options.maritalStatus.placeholder', '-- Select One --')} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="-- Select One --" disabled>{t('form.options.maritalStatus.placeholder', '-- Select One --')}</SelectItem>
+                          {[
+                            { label: t('form.options.maritalStatus.Married', 'Married'), value: 'Married' },
+                            { label: t('form.options.maritalStatus.NeverMarried', 'Never Married'), value: 'Never Married' },
+                            { label: t('form.options.maritalStatus.Divorced', 'Divorced'), value: 'Divorced' },
+                            { label: t('form.options.maritalStatus.Separated', 'Separated'), value: 'Separated' },
+                            { label: t('form.options.maritalStatus.Widowed', 'Widowed'), value: 'Widowed' },
+                          ].map((opt) => (
+                            <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      {errors.maritalStatus && <p className="text-sm text-destructive">{getErrorMessage(errors.maritalStatus)}</p>}
+                    </div>
+                  )}
+                </div>
               )}
 
               {/* ── PAGE 2: Location Details ─────────────────────────────── */}
@@ -315,19 +441,19 @@ export function EligibilityForm() {
                 <>
                   {/* State */}
                   <div className="space-y-2">
-                    <Label className="text-base font-semibold">Please select your state</Label>
+                    <Label className="text-base font-semibold">{t('form.fields.state')}</Label>
                     <Select value={watchedState} onValueChange={(v) => { setValue('state', v, { shouldDirty: true, shouldValidate: true }); setValue('district', '') }}>
-                      <SelectTrigger className="h-11"><SelectValue placeholder="Select your state" /></SelectTrigger>
+                      <SelectTrigger className="h-11"><SelectValue placeholder={t('form.fields.statePlaceholder')} /></SelectTrigger>
                       <SelectContent>
                         {INDIAN_STATES.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
                       </SelectContent>
                     </Select>
-                    {errors.state && <p className="text-sm text-destructive">{errors.state.message}</p>}
+                    {errors.state && <p className="text-sm text-destructive">{getErrorMessage(errors.state)}</p>}
                   </div>
 
                   {/* Area Type */}
                   <div className="space-y-2">
-                    <Label className="text-base font-semibold"><span className="text-destructive">*</span>Please select your area of residence</Label>
+                    <Label className="text-base font-semibold"><span className="text-destructive">*</span>{t('form.fields.areaType')}</Label>
                     <div className="grid grid-cols-2 gap-3 pt-1">
                       {(['Urban', 'Rural'] as const).map((area) => {
                         const selected = areaType === area
@@ -337,7 +463,7 @@ export function EligibilityForm() {
                             className={`h-12 rounded-md border-2 px-4 text-left text-base font-medium transition-colors ${selected ? 'border-secondary bg-secondary/5 text-secondary' : 'border-border bg-card hover:border-muted-foreground'}`}
                             aria-pressed={selected}
                           >
-                            {area}
+                            {t('form.options.areaType.' + area, area)}
                           </button>
                         )
                       })}
@@ -349,60 +475,36 @@ export function EligibilityForm() {
               {/* ── PAGE 3: Social / Caste Details ──────────────────────── */}
               {step === 2 && (
                 <div className="space-y-4">
-                  <Label className="text-base font-semibold">
-                    <span className="text-destructive">*</span>You belong to...
-                  </Label>
-                  <div className="space-y-3">
-                    {[
-                      { value: 'General', label: 'General', info: '' },
-                      { value: 'OBC', label: 'Other Backward Class (OBC)', info: 'Other Backward Classes are socially and educationally disadvantaged groups.' },
-                      { value: 'PVTG', label: 'Particularly Vulnerable Tribal Group (PVTG)', info: 'PVTGs are particularly vulnerable groups among Scheduled Tribes characterized by declining/stagnant population, pre-agricultural technology, and low literacy.' },
-                      { value: 'SC', label: 'Scheduled Caste (SC)', info: 'Scheduled Castes are historically disadvantaged communities identified for socio-economic development and reservation benefits.' },
-                      { value: 'ST', label: 'Scheduled Tribe (ST)', info: 'Scheduled Tribes are indigenous communities identified for socio-economic upliftment and cultural protection.' },
-                      { value: 'DNT', label: 'De-Notified, Nomadic, and Semi-Nomadic (DNT) communities', info: '' },
-                      { value: 'EWS', label: 'Economically Weaker Section (EWS)', info: 'Economically Weaker Section is a category of citizens whose family income is below ₹8 Lakhs annually and who do not belong to SC/ST/OBC.' },
-                    ].map((opt) => {
-                      const isSelected = casteCategory === opt.value
-                      return (
-                        <div key={opt.value} className="relative">
-                          <button
-                            type="button"
-                            onClick={() => setValue('casteCategory', opt.value as any, { shouldDirty: true, shouldValidate: true })}
-                            className={`flex w-full items-center justify-between rounded-lg border-2 p-4 text-left text-base font-medium transition-all ${isSelected
-                                ? 'border-primary bg-primary/5 text-primary shadow-sm'
-                                : 'border-border bg-card text-foreground hover:border-muted-foreground'
-                              }`}
-                          >
-                            <span className="pr-4 leading-normal">{opt.label}</span>
-                            {opt.info && (
-                              <div
-                                onClick={(e) => {
-                                  e.stopPropagation()
-                                  setActiveInfo(activeInfo === opt.value ? null : opt.value)
-                                }}
-                                className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-800 font-serif font-semibold text-sm transition-all hover:bg-emerald-200 cursor-help"
-                                title="Click for information"
-                              >
-                                i
-                              </div>
-                            )}
-                          </button>
-                          <AnimatePresence>
-                            {activeInfo === opt.value && (
-                              <motion.div
-                                initial={{ height: 0, opacity: 0, marginTop: 0 }}
-                                animate={{ height: 'auto', opacity: 1, marginTop: 6 }}
-                                exit={{ height: 0, opacity: 0, marginTop: 0 }}
-                                className="overflow-hidden rounded-md bg-muted/50 p-3 text-sm text-muted-foreground border-l-4 border-emerald-500"
-                              >
-                                {opt.info}
-                              </motion.div>
-                            )}
-                          </AnimatePresence>
-                        </div>
-                      )
-                    })}
+                  <div className="space-y-2">
+                    <Label className="text-base font-semibold">
+                      <span className="text-destructive">*</span>{t('form.fields.casteCategory')}
+                    </Label>
+                    <Select
+                      value={casteCategory}
+                      onValueChange={(v) => setValue('casteCategory', v as any, { shouldDirty: true, shouldValidate: true })}
+                    >
+                      <SelectTrigger className="h-11">
+                        <SelectValue placeholder={t('form.options.casteCategory.placeholder', '-- Select Category --')} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {[
+                          { value: 'General', label: t('form.options.casteCategory.General') },
+                          { value: 'OBC', label: t('form.options.casteCategory.OBC') },
+                          { value: 'PVTG', label: t('form.options.casteCategory.PVTG') },
+                          { value: 'SC', label: t('form.options.casteCategory.SC') },
+                          { value: 'ST', label: t('form.options.casteCategory.ST') },
+                          { value: 'DNT', label: t('form.options.casteCategory.DNT') },
+                          { value: 'EWS', label: t('form.options.casteCategory.EWS') },
+                        ].map((opt) => (
+                          <SelectItem key={opt.value} value={opt.value}>
+                            {opt.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    {errors.casteCategory && <p className="text-sm text-destructive">{getErrorMessage(errors.casteCategory)}</p>}
                   </div>
+
                 </div>
               )}
 
@@ -412,10 +514,10 @@ export function EligibilityForm() {
                   {/* Disability Status */}
                   <div className="space-y-3">
                     <Label className="text-base font-semibold">
-                      <span className="text-destructive">*</span>Do you identify as a person with a disability?
+                      <span className="text-destructive">*</span>{t('form.fields.disabilityStatus')}
                     </Label>
                     <div className="grid grid-cols-2 gap-3">
-                      {[{ label: 'Yes', value: true }, { label: 'No', value: false }].map((opt) => {
+                      {[{ label: yesLabel, value: true }, { label: noLabel, value: false }].map((opt) => {
                         const selected = disabilityStatus === opt.value
                         return (
                           <button
@@ -444,32 +546,40 @@ export function EligibilityForm() {
                   {disabilityStatus === true ? (
                     <div className="space-y-2">
                       <Label className="text-base font-semibold">
-                        <span className="text-destructive">*</span>What is your differently abled percentage?
+                        <span className="text-destructive">*</span>{t('form.fields.disabilityPercentage')}
                       </Label>
                       <Select
                         value={disabilityPercentage}
                         onValueChange={(v) => setValue('disabilityPercentage', v, { shouldDirty: true, shouldValidate: true })}
                       >
                         <SelectTrigger className="h-11">
-                          <SelectValue placeholder="-- Select One --" />
+                          <SelectValue placeholder={t('form.options.disabilityPercentage.placeholder')} />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="-- Select One --">-- Select One --</SelectItem>
-                          {['Below 40%', '40% - 59%', '60% - 79%', '80% and above'].map((p) => (
-                            <SelectItem key={p} value={p}>
-                              {p}
-                            </SelectItem>
-                          ))}
+                          <SelectItem value="-- Select One --">{t('form.options.disabilityPercentage.placeholder')}</SelectItem>
+                          {['Below 40%', '40% - 59%', '60% - 79%', '80% and above'].map((p) => {
+                            const pKeys: Record<string, string> = {
+                              'Below 40%': 'below40',
+                              '40% - 59%': 'from40to59',
+                              '60% - 79%': 'from60to79',
+                              '80% and above': 'above80',
+                            }
+                            return (
+                              <SelectItem key={p} value={p}>
+                                {t('form.options.disabilityPercentage.' + pKeys[p], p)}
+                              </SelectItem>
+                            )
+                          })}
                         </SelectContent>
                       </Select>
                     </div>
                   ) : (
                     <div className="space-y-3">
                       <Label className="text-base font-semibold">
-                        <span className="text-destructive">*</span>Do you belong to minority?
+                        <span className="text-destructive">*</span>{t('form.fields.isMinority')}
                       </Label>
                       <div className="grid grid-cols-2 gap-3">
-                        {[{ label: 'Yes', value: true }, { label: 'No', value: false }].map((opt) => {
+                        {[{ label: yesLabel, value: true }, { label: noLabel, value: false }].map((opt) => {
                           const selected = isMinority === opt.value
                           return (
                             <button
@@ -498,10 +608,10 @@ export function EligibilityForm() {
                   {/* Are you a student? */}
                   <div className="space-y-3">
                     <Label className="text-base font-semibold">
-                      <span className="text-destructive">*</span>Are you a student?
+                      <span className="text-destructive">*</span>{t('form.fields.isStudent')}
                     </Label>
                     <div className="grid grid-cols-2 gap-3">
-                      {[{ label: 'Yes', value: true }, { label: 'No', value: false }].map((opt) => {
+                      {[{ label: yesLabel, value: true }, { label: noLabel, value: false }].map((opt) => {
                         const selected = isStudent === opt.value
                         return (
                           <button
@@ -533,41 +643,42 @@ export function EligibilityForm() {
 
                   {/* If not a student, show employment status buttons */}
                   {isStudent === false && (
-                    <div className="space-y-3">
-                      <Label className="text-base font-semibold">
-                        <span className="text-destructive">*</span>What is your current employment status?
-                      </Label>
+                    <div className="space-y-4">
                       <div className="space-y-2">
-                        {[
-                          { label: 'Employed', value: 'Employed' },
-                          { label: 'Unemployed', value: 'Unemployed' },
-                          { label: 'Self-Employed/ Entrepreneur', value: 'Self-Employed' },
-                        ].map((opt) => {
-                          const selected = employmentStatus === opt.value
-                          return (
-                            <button
-                              key={opt.value}
-                              type="button"
-                              onClick={() => {
-                                setValue('employmentStatus', opt.value as any, { shouldDirty: true, shouldValidate: true })
-                                if (opt.value !== 'Employed') {
-                                  setValue('isGovernmentEmployee', false, { shouldDirty: true })
-                                }
-                                if (opt.value === 'Unemployed') {
-                                  setValue('occupation', 'Unemployed', { shouldDirty: true, shouldValidate: true })
-                                } else {
-                                  setValue('occupation', '', { shouldDirty: true })
-                                }
-                              }}
-                              className={`flex w-full items-center justify-between rounded-lg border-2 p-4 text-left text-base font-medium transition-all ${selected
-                                  ? 'border-green-600 bg-green-50/10 text-green-600 font-semibold shadow-sm'
-                                  : 'border-border bg-card text-foreground hover:border-muted-foreground'
-                                }`}
-                            >
-                              {opt.label}
-                            </button>
-                          )
-                        })}
+                        <Label className="text-base font-semibold">
+                          <span className="text-destructive">*</span>{t('form.fields.employmentStatus')}
+                        </Label>
+                        <Select
+                          value={employmentStatus}
+                          onValueChange={(v) => {
+                            setValue('employmentStatus', v as any, { shouldDirty: true, shouldValidate: true })
+                            if (v !== 'Employed') {
+                              setValue('isGovernmentEmployee', false, { shouldDirty: true })
+                            }
+                            if (v === 'Unemployed') {
+                              setValue('occupation', 'Unemployed', { shouldDirty: true, shouldValidate: true })
+                            } else if (v === 'Self-Employed') {
+                              setValue('occupation', '', { shouldDirty: true })
+                            } else {
+                              setValue('occupation', '', { shouldDirty: true })
+                            }
+                          }}
+                        >
+                          <SelectTrigger className="h-11">
+                            <SelectValue placeholder={t('form.options.employmentStatus.placeholder', '-- Select Status --')} />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="-- Select Status --" disabled>{t('form.options.employmentStatus.placeholder', '-- Select Status --')}</SelectItem>
+                            {[
+                              { label: t('form.options.employmentStatus.Employed'), value: 'Employed' },
+                              { label: t('form.options.employmentStatus.Unemployed'), value: 'Unemployed' },
+                              { label: t('form.options.employmentStatus.SelfEmployed'), value: 'Self-Employed' },
+                            ].map((opt) => (
+                              <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        {errors.employmentStatus && <p className="text-sm text-destructive">{getErrorMessage(errors.employmentStatus)}</p>}
                       </div>
                     </div>
                   )}
@@ -576,10 +687,10 @@ export function EligibilityForm() {
                   {isStudent === false && employmentStatus === 'Employed' && (
                     <div className="space-y-3">
                       <Label className="text-base font-semibold">
-                        <span className="text-destructive">*</span>Are you currently working as a government employee?
+                        <span className="text-destructive">*</span>{t('form.fields.isGovernmentEmployee')}
                       </Label>
                       <div className="grid grid-cols-2 gap-3">
-                        {[{ label: 'Yes', value: true }, { label: 'No', value: false }].map((opt) => {
+                        {[{ label: yesLabel, value: true }, { label: noLabel, value: false }].map((opt) => {
                           const selected = isGovernmentEmployee === opt.value
                           return (
                             <button
@@ -609,149 +720,53 @@ export function EligibilityForm() {
                   )}
                 </div>
               )}
-              {/* ── PAGE 6: Economic Details ─────────────────────────────── */}
+
+
+              {/* ── PAGE 7: Economic Details ─────────────────────────────── */}
               {step === 5 && (
                 <div className="space-y-6">
                   {isStudent === false && employmentStatus === 'Employed' && isGovernmentEmployee === true ? (
                     <>
-                      {/* Disability Status */}
-                      <div className="space-y-3">
-                        <div className="flex items-center gap-2">
-                          <Label className="text-base font-semibold">
-                            <span className="text-destructive">*</span>Do you identify as a person with a disability?
-                          </Label>
-                          <button
-                            type="button"
-                            onClick={() => setActiveInfo(activeInfo === 'gov_disability' ? null : 'gov_disability')}
-                            className="rounded-full p-0.5 text-emerald-600 hover:bg-emerald-50 transition-colors inline-flex items-center justify-center"
-                          >
-                            <Info className="h-5 w-5 fill-emerald-500/10" />
-                          </button>
-                        </div>
-
-                        <AnimatePresence>
-                          {activeInfo === 'gov_disability' && (
-                            <motion.div
-                              initial={{ opacity: 0, height: 0 }}
-                              animate={{ opacity: 1, height: 'auto' }}
-                              exit={{ opacity: 0, height: 0 }}
-                              className="overflow-hidden rounded-md bg-muted/50 p-3 text-sm text-muted-foreground border-l-4 border-emerald-500"
-                            >
-                              Persons with 40% or more disability are eligible for special reservation and concessions in government schemes.
-                            </motion.div>
-                          )}
-                        </AnimatePresence>
-
-                        <div className="grid grid-cols-2 gap-3">
-                          {[{ label: 'Yes', value: true }, { label: 'No', value: false }].map((opt) => {
-                            const selected = disabilityStatus === opt.value
-                            return (
-                              <button
-                                key={opt.label}
-                                type="button"
-                                onClick={() => {
-                                  setValue('disabilityStatus', opt.value, { shouldDirty: true, shouldValidate: true })
-                                  if (!opt.value) {
-                                    setValue('disabilityPercentage', '', { shouldDirty: true })
-                                  }
-                                }}
-                                className={`h-11 rounded-md border-2 px-4 text-center text-base font-medium transition-colors ${
-                                  selected
-                                    ? 'border-green-600 bg-green-50/10 text-green-600 font-semibold'
-                                    : 'border-border bg-card hover:border-muted-foreground'
-                                }`}
-                                aria-pressed={selected}
-                              >
-                                {opt.label}
-                              </button>
-                            )
-                          })}
-                        </div>
+                      {/* Government Employee: Ask for Individual Income and Family Income */}
+                      <div className="space-y-2 animate-in fade-in slide-in-from-top-1 duration-200">
+                        <Label htmlFor="individualIncome" className="text-base font-semibold">
+                          <span className="text-destructive">*</span>{t('form.fields.individualIncome', 'What is your annual income?')}
+                        </Label>
+                        <Input
+                          id="individualIncome"
+                          type="number"
+                          min={0}
+                          {...register('individualIncome', { valueAsNumber: true })}
+                          placeholder={t('form.fields.incomePlaceholder')}
+                          className="h-11"
+                        />
+                        {errors.individualIncome && <p className="text-sm text-destructive">{getErrorMessage(errors.individualIncome)}</p>}
                       </div>
 
-                      {/* Conditional Render based on disabilityStatus */}
-                      {disabilityStatus === true ? (
-                        <div className="space-y-2">
-                          <Label className="text-base font-semibold">
-                            <span className="text-destructive">*</span>What is your differently abled percentage?
-                          </Label>
-                          <Select
-                            value={disabilityPercentage}
-                            onValueChange={(v) => setValue('disabilityPercentage', v, { shouldDirty: true, shouldValidate: true })}
-                          >
-                            <SelectTrigger className="h-11">
-                              <SelectValue placeholder="-- Select One --" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="-- Select One --">-- Select One --</SelectItem>
-                              {['Below 40%', '40% - 59%', '60% - 79%', '80% and above'].map((p) => (
-                                <SelectItem key={p} value={p}>
-                                  {p}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
-                      ) : (
-                        <div className="space-y-3">
-                          <div className="flex items-center gap-2">
-                            <Label className="text-base font-semibold">
-                              <span className="text-destructive">*</span>Do you belong to minority?
-                            </Label>
-                            <button
-                              type="button"
-                              onClick={() => setActiveInfo(activeInfo === 'gov_minority' ? null : 'gov_minority')}
-                              className="rounded-full p-0.5 text-emerald-600 hover:bg-emerald-50 transition-colors inline-flex items-center justify-center"
-                            >
-                              <Info className="h-5 w-5 fill-emerald-500/10" />
-                            </button>
-                          </div>
-
-                          <AnimatePresence>
-                            {activeInfo === 'gov_minority' && (
-                              <motion.div
-                                initial={{ opacity: 0, height: 0 }}
-                                animate={{ opacity: 1, height: 'auto' }}
-                                exit={{ opacity: 0, height: 0 }}
-                                className="overflow-hidden rounded-md bg-muted/50 p-3 text-sm text-muted-foreground border-l-4 border-emerald-500"
-                              >
-                                Minority communities include Muslims, Christians, Sikhs, Buddhists, Zoroastrians (Parsis), and Jains.
-                              </motion.div>
-                            )}
-                          </AnimatePresence>
-
-                          <div className="grid grid-cols-2 gap-3">
-                            {[{ label: 'Yes', value: true }, { label: 'No', value: false }].map((opt) => {
-                              const selected = isMinority === opt.value
-                              return (
-                                <button
-                                  key={opt.label}
-                                  type="button"
-                                  onClick={() => setValue('isMinority', opt.value, { shouldDirty: true, shouldValidate: true })}
-                                  className={`h-11 rounded-md border-2 px-4 text-center text-base font-medium transition-colors ${
-                                    selected
-                                      ? 'border-green-600 bg-green-50/10 text-green-600 font-semibold'
-                                      : 'border-border bg-card hover:border-muted-foreground'
-                                  }`}
-                                  aria-pressed={selected}
-                                >
-                                  {opt.label}
-                                </button>
-                              )
-                            })}
-                          </div>
-                        </div>
-                      )}
+                      <div className="space-y-2 animate-in fade-in slide-in-from-top-2 duration-200">
+                        <Label htmlFor="familyIncome" className="text-base font-semibold">
+                          <span className="text-destructive">*</span>{t('form.fields.familyIncome')}
+                        </Label>
+                        <Input
+                          id="familyIncome"
+                          type="number"
+                          min={0}
+                          {...register('familyIncome', { valueAsNumber: true })}
+                          placeholder={t('form.fields.incomePlaceholder')}
+                          className="h-11"
+                        />
+                        {errors.familyIncome && <p className="text-sm text-destructive">{getErrorMessage(errors.familyIncome)}</p>}
+                      </div>
                     </>
                   ) : (
                     <>
                       {/* Occupation Select */}
-                      {employmentStatus !== 'Unemployed' && (
-                        <div className="space-y-2">
+                      {isStudent === false && (employmentStatus === 'Employed' || employmentStatus === 'Self-Employed') && (
+                        <div className="space-y-2 animate-in fade-in slide-in-from-top-1 duration-200">
                           <Label htmlFor="occupation" className="text-base font-semibold">
-                            <span className="text-destructive">*</span>Is your occupation one of the following?
+                            <span className="text-destructive">*</span>{t('form.fields.occupation')}
                           </Label>
-                          <p className="text-xs text-muted-foreground mt-[-4px] mb-1">*Select One</p>
+                          <p className="text-xs text-muted-foreground mt-[-4px] mb-1">{t('form.fields.occupationSubtext')}</p>
                           <Select
                             value={occupation}
                             onValueChange={(v) => {
@@ -763,10 +778,10 @@ export function EligibilityForm() {
                             }}
                           >
                             <SelectTrigger className="h-11">
-                              <SelectValue placeholder="-- Occupation --" />
+                              <SelectValue placeholder={t('form.options.occupation.placeholder')} />
                             </SelectTrigger>
                             <SelectContent>
-                              <SelectItem value="-- Occupation --" disabled>-- Occupation --</SelectItem>
+                              <SelectItem value="-- Occupation --" disabled>{t('form.options.occupation.placeholder')}</SelectItem>
                               {[
                                 'Farmer / Agricultural Worker',
                                 'Artisan / Craftsman / Weaver',
@@ -776,24 +791,36 @@ export function EligibilityForm() {
                                 'Private Sector Employee',
                                 'Unemployed',
                                 'Other',
-                              ].map((opt) => (
-                                <SelectItem key={opt} value={opt}>
-                                  {opt}
-                                </SelectItem>
-                              ))}
+                              ].map((opt) => {
+                                const occKeys: Record<string, string> = {
+                                  'Farmer / Agricultural Worker': 'farmer',
+                                  'Artisan / Craftsman / Weaver': 'artisan',
+                                  'Involved in Animal Husbandry / Fisheries': 'husbandry',
+                                  'Startup Owner / Entrepreneur': 'startup',
+                                  'Self-Employed / Other Business': 'selfEmployed',
+                                  'Private Sector Employee': 'private',
+                                  'Unemployed': 'unemployed',
+                                  'Other': 'other',
+                                }
+                                return (
+                                  <SelectItem key={opt} value={opt}>
+                                    {t('form.options.occupation.' + occKeys[opt], opt)}
+                                  </SelectItem>
+                                )
+                              })}
                             </SelectContent>
                           </Select>
-                          {errors.occupation && <p className="text-sm text-destructive">{errors.occupation.message}</p>}
+                          {errors.occupation && <p className="text-sm text-destructive">{getErrorMessage(errors.occupation)}</p>}
                         </div>
                       )}
 
                       {/* BPL Category Selection */}
                       <div className="space-y-3">
                         <Label className="text-base font-semibold">
-                          <span className="text-destructive">*</span>Do you belong to BPL category?
+                          <span className="text-destructive">*</span>{t('form.fields.bplStatus')}
                         </Label>
                         <div className="grid grid-cols-2 gap-3">
-                          {[{ label: 'Yes', value: true }, { label: 'No', value: false }].map((opt) => {
+                          {[{ label: yesLabel, value: true }, { label: noLabel, value: false }].map((opt) => {
                             const selected = bplStatus === opt.value
                             return (
                               <button
@@ -826,10 +853,10 @@ export function EligibilityForm() {
                       {bplStatus === true ? (
                         <div className="space-y-3">
                           <Label className="text-base font-semibold">
-                            <span className="text-destructive">*</span>Are you in any of the following condition - Destitute /Penury /Extreme Hardship /Distress
+                            <span className="text-destructive">*</span>{t('form.fields.isInHardship')}
                           </Label>
                           <div className="grid grid-cols-2 gap-3">
-                            {[{ label: 'Yes', value: true }, { label: 'No', value: false }].map((opt) => {
+                            {[{ label: yesLabel, value: true }, { label: noLabel, value: false }].map((opt) => {
                               const selected = isInHardship === opt.value
                               return (
                                 <button
@@ -842,7 +869,7 @@ export function EligibilityForm() {
                                       : 'border-border bg-card hover:border-muted-foreground'
                                   }`}
                                   aria-pressed={selected}
-                                >
+                                  >
                                   {opt.label}
                                 </button>
                               )
@@ -850,19 +877,19 @@ export function EligibilityForm() {
                           </div>
                         </div>
                       ) : bplStatus === false ? (
-                        <div className="space-y-2">
+                        <div className="space-y-2 animate-in fade-in slide-in-from-top-1 duration-200">
                           <Label htmlFor="familyIncome" className="text-base font-semibold">
-                            What is your family's annual income?
+                            {isStudent ? t('form.fields.parentIncome') : t('form.fields.familyIncome')}
                           </Label>
                           <Input
                             id="familyIncome"
                             type="number"
                             min={0}
                             {...register('familyIncome', { valueAsNumber: true })}
-                            placeholder="Enter here"
+                            placeholder={t('form.fields.incomePlaceholder')}
                             className="h-11"
                           />
-                          {errors.familyIncome && <p className="text-sm text-destructive">{errors.familyIncome.message}</p>}
+                          {errors.familyIncome && <p className="text-sm text-destructive">{getErrorMessage(errors.familyIncome)}</p>}
                         </div>
                       ) : null}
                     </>
@@ -870,87 +897,19 @@ export function EligibilityForm() {
                 </div>
               )}
 
-              {/* ── PAGE 7: Preferences & Additional Filters ─────────────── */}
-              {step === 6 && (
-                <div className="space-y-6">
-                  {/* Scheme Categories */}
-                  <div className="space-y-3">
-                    <div>
-                      <Label className="text-base font-semibold">Scheme Categories</Label>
-                      <p className="text-sm text-muted-foreground">Select categories you want to explore. Leave all unchecked to see all.</p>
-                    </div>
-                    <div className="grid gap-3 sm:grid-cols-2">
-                      {PREFERRED_SCHEME_CATEGORIES.map((category) => {
-                        const selected = preferredCategories.includes(category)
-                        return (
-                          <div key={category} className="flex items-center gap-3">
-                            <Checkbox
-                              id={`category-${category}`}
-                              checked={selected}
-                              onCheckedChange={(checked) => {
-                                setValue(
-                                  'preferredCategories',
-                                  checked ? [...preferredCategories, category] : preferredCategories.filter((item) => item !== category),
-                                  { shouldDirty: true, shouldValidate: true },
-                                )
-                              }}
-                            />
-                            <Label htmlFor={`category-${category}`} className="cursor-pointer">{category}</Label>
-                          </div>
-                        )
-                      })}
-                    </div>
-                  </div>
-
-                  {/* Additional Filters */}
-                  <div className="border-t pt-5">
-                    <Label className="text-base font-semibold">Additional Filters</Label>
-                    <p className="text-sm text-muted-foreground mb-3">Check all that apply to you</p>
-                    <div className="grid gap-4 sm:grid-cols-2">
-                      {([
-                        ['isFarmer', 'Farmer / Agricultural Worker'],
-                        ['isWidow', 'Widow'],
-                        ['isSeniorCitizen', 'Senior Citizen (60+)'],
-                        ['isStartupOwner', 'Startup Owner'],
-                        ['skillDevelopmentInterest', 'Interested in Skill Development'],
-                        ['isArtisan', 'Artisan / Craftsman / Weaver'],
-                        ['isAnimalHusbandryOrFisheries', 'Involved in Animal Husbandry / Fisheries'],
-                      ] as const).map(([field, label]) => {
-                        const watchedFields = {
-                          isFarmer,
-                          isWidow,
-                          isSeniorCitizen,
-                          isStartupOwner,
-                          skillDevelopmentInterest,
-                          isArtisan,
-                          isAnimalHusbandryOrFisheries,
-                        }
-                        return (
-                          <div key={field} className="flex items-center gap-3">
-                            <Checkbox
-                              id={field}
-                              checked={watchedFields[field]}
-                              onCheckedChange={(v) => setValue(field as any, !!v, { shouldDirty: true })}
-                            />
-                            <Label htmlFor={field} className="cursor-pointer">{label}</Label>
-                          </div>
-                        )
-                      })}
-                    </div>
-                  </div>
-                </div>
-              )}
             </motion.div>
           </AnimatePresence>
 
           <div className="mt-8 flex justify-between gap-4">
-            <Button type="button" variant="outline" onClick={prevStep} disabled={step === 0}>
+            <Button type="button" variant="outline" onClick={prevStep} disabled={step === 0 || isSubmitting}>
               {t('form.prev')}
             </Button>
             {activeStepIndex < totalActiveSteps - 1 ? (
-              <Button type="button" onClick={nextStep}>{t('form.next')}</Button>
+              <Button type="button" onClick={nextStep} disabled={isSubmitting}>{t('form.next')}</Button>
             ) : (
-              <Button type="submit">{t('form.submit')}</Button>
+              <Button type="submit" disabled={isSubmitting}>
+                {isSubmitting ? t('form.evaluating', 'Evaluating...') : t('form.submit')}
+              </Button>
             )}
           </div>
         </form>

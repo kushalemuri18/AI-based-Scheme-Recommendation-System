@@ -29,6 +29,51 @@ app.use('/api/auth', authRoutes)
 app.use('/api/schemes', schemeRoutes)
 app.use('/api/eligibility', eligibilityRoutes)
 
+// --- ChatGPT Proxy Endpoint for Local Chatbot ---
+app.post('/api/chatgpt', async (req, res) => {
+  const apiKey = process.env.OPENAI_API_KEY
+  const model = process.env.OPENAI_MODEL ?? req.body?.model ?? 'gpt-4o-mini'
+
+  if (!apiKey) {
+    return res.status(500).json({ error: 'OPENAI_API_KEY is not configured on the server-side' })
+  }
+
+  const { messages, temperature } = req.body
+
+  if (!Array.isArray(messages) || messages.length === 0) {
+    return res.status(400).json({ error: 'messages are required' })
+  }
+
+  try {
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model,
+        temperature: temperature ?? 0.2,
+        messages,
+      }),
+    })
+
+    const data = await response.json()
+
+    if (!response.ok) {
+      return res.status(response.status).json({
+        error: data?.error?.message ?? 'OpenAI request failed',
+      })
+    }
+
+    return res.status(200).json({
+      content: data?.choices?.[0]?.message?.content ?? '',
+    })
+  } catch (error) {
+    return res.status(500).json({ error: 'Unable to reach OpenAI' })
+  }
+})
+
 // --- Stats ---
 app.get('/api/stats', async (req, res) => {
   try {

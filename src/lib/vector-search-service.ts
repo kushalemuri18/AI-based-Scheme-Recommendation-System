@@ -1,5 +1,5 @@
 
-import { buildSchemeDocument, getAllSchemes } from '@/lib/scheme-service'
+import { buildSchemeDocument, getAllSchemes, toSchemeModel } from '@/lib/scheme-service'
 import type { SchemeModel } from '@/types'
 
 export interface VectorSearchResult {
@@ -18,7 +18,7 @@ export function searchSchemesLocally(query: string, limit = 6): VectorSearchResu
 
   return getAllSchemes()
     .map((scheme) => ({
-      scheme,
+      scheme: toSchemeModel(scheme) as SchemeModel,
       score: cosineSimilarity(queryVector, createHashedEmbedding(buildSchemeDocument(scheme))),
     }))
     .sort((a, b) => b.score - a.score)

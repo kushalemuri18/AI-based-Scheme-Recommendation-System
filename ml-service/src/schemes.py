@@ -351,7 +351,8 @@ SCHEMES: list[Scheme] = [
         "id": "pradhan-mantri-awas-yojana---gramin-pmay-g",
         "name": "Pradhan Mantri Awas Yojana - Gramin (PMAY-G)",
         "rules": {
-            "incomeLimit": 500000
+            "incomeLimit": 500000,
+            "excludeStudents": True
         },
         "featured": False,
         "popularity": 70
@@ -360,7 +361,8 @@ SCHEMES: list[Scheme] = [
         "id": "pradhan-mantri-awas-yojana---urban-20-pmay-u-20",
         "name": "Pradhan Mantri Awas Yojana - Urban 2.0 (PMAY-U 2.0)",
         "rules": {
-            "incomeLimit": 500000
+            "incomeLimit": 500000,
+            "excludeStudents": True
         },
         "featured": False,
         "popularity": 70
@@ -369,7 +371,8 @@ SCHEMES: list[Scheme] = [
         "id": "credit-linked-subsidy--interest-subsidy-under-pmay-u-20",
         "name": "Credit Linked Subsidy / Interest Subsidy under PMAY-U 2.0",
         "rules": {
-            "incomeLimit": 500000
+            "incomeLimit": 500000,
+            "excludeStudents": True
         },
         "featured": False,
         "popularity": 70
@@ -387,7 +390,8 @@ SCHEMES: list[Scheme] = [
         "id": "beneficiary-led-construction-blc-under-pmay-u-20",
         "name": "Beneficiary Led Construction (BLC) under PMAY-U 2.0",
         "rules": {
-            "incomeLimit": 500000
+            "incomeLimit": 500000,
+            "excludeStudents": True
         },
         "featured": False,
         "popularity": 70
@@ -396,7 +400,8 @@ SCHEMES: list[Scheme] = [
         "id": "affordable-housing-in-partnership-ahp-under-pmay-u-20",
         "name": "Affordable Housing in Partnership (AHP) under PMAY-U 2.0",
         "rules": {
-            "incomeLimit": 500000
+            "incomeLimit": 500000,
+            "excludeStudents": True
         },
         "featured": False,
         "popularity": 70
@@ -405,7 +410,8 @@ SCHEMES: list[Scheme] = [
         "id": "national-urban-livelihoods-mission---housingurban-shelter-component",
         "name": "National Urban Livelihoods Mission - Housing/Urban Shelter Component",
         "rules": {
-            "incomeLimit": 500000
+            "incomeLimit": 500000,
+            "excludeStudents": True
         },
         "featured": False,
         "popularity": 70

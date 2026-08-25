@@ -8,21 +8,31 @@ interface ChatGPTProxyResponse {
 
 const CHATGPT_PROXY_URL = '/api/chatgpt'
 
+function getTranslatedProp(scheme: any, prop: string, locale: string): any {
+  if (!scheme) return undefined
+  if (locale === 'en') return scheme[prop]
+  const suffix = locale.charAt(0).toUpperCase() + locale.slice(1) // 'hi' -> 'Hi', 'te' -> 'Te'
+  const localizedKey = `${prop}${suffix}`
+  return scheme[localizedKey] || scheme[prop]
+}
+
 export async function generateChatGPTSchemeResponse(params: {
   messages: ChatMessage[]
   userProfile: ExtractedUserProfile
   rankedSchemes: RankedScheme[]
   fallbackResponse: string
   queryIntent?: QueryIntent
+  locale?: string
 }): Promise<string> {
   const intent = params.queryIntent ?? 'recommendation'
+  const locale = params.locale ?? 'en'
 
   const content = await callChatGPTProxy({
     temperature: 0.2,
     messages: [
       {
         role: 'system',
-        content: buildSystemPrompt(intent),
+        content: buildSystemPrompt(intent, locale),
       },
       {
         role: 'user',
@@ -34,7 +44,7 @@ export async function generateChatGPTSchemeResponse(params: {
             })),
             extracted_user_profile: params.userProfile,
             query_intent: intent,
-            ranked_schemes: params.rankedSchemes.slice(0, 6).map(formatSchemeForPrompt),
+            ranked_schemes: params.rankedSchemes.slice(0, 6).map((r) => formatSchemeForPrompt(r, locale)),
             required_response_style: buildResponseStyle(intent),
           },
           null,
@@ -96,7 +106,7 @@ async function callChatGPTProxy(payload: {
   }
 }
 
-function buildSystemPrompt(intent: QueryIntent): string {
+function buildSystemPrompt(intent: QueryIntent, locale: string): string {
   const base = `You are a ChatGPT-powered Government Scheme Assistant for India.
 Your job is to answer user questions about government schemes using the retrieved scheme context.
 
@@ -120,7 +130,22 @@ CRITICAL RULE — Answer ONLY what the user asked:
     recommendation: '\n\nThe user wants SCHEME RECOMMENDATIONS. Recommend relevant schemes based on their profile. Use card-like formatting with match indicators, but keep each scheme summary brief.',
   }
 
+  const langNames: Record<string, string> = {
+    en: 'English',
+    hi: 'Hindi',
+    te: 'Telugu',
+    ta: 'Tamil',
+    kn: 'Kannada',
+    ml: 'Malayalam'
+  }
+  const langName = langNames[locale] || 'English'
+
   return base + (intentGuidance[intent] || '') + `
+
+CRITICAL MULTILINGUAL RULE:
+- The requested user language is ${langName} (locale: '${locale}').
+- You MUST write your response entirely in ${langName}. If the user queries in Hindi, reply in Hindi. If the user queries in Telugu, reply in Telugu, and so on.
+- Translate all scheme details (name, benefits, eligibility, etc.) into ${langName} in your response.
 
 Additional behavior:
 - Recommendation-first: never block recommendations because profile fields are missing.
@@ -161,7 +186,7 @@ function buildResponseStyle(intent: QueryIntent) {
   }
 }
 
-function formatSchemeForPrompt(result: RankedScheme) {
+function formatSchemeForPrompt(result: RankedScheme, locale: string) {
   const scheme: SchemeModel = result.scheme
 
   return {
@@ -173,15 +198,15 @@ function formatSchemeForPrompt(result: RankedScheme) {
     disqualifyingCriteria: result.disqualifyingCriteria,
     scheme: {
       id: scheme.id,
-      scheme_name: scheme.scheme_name,
-      category: scheme.category,
+      scheme_name: getTranslatedProp(scheme, 'name', locale) || scheme.scheme_name,
+      category: getTranslatedProp(scheme, 'category', locale) || scheme.category,
       beneficiaries: scheme.beneficiaries,
       state: scheme.state,
       income_limit: scheme.income_limit,
       age_limit: scheme.age_limit,
-      eligibility: scheme.eligibility,
-      benefits: scheme.benefits,
-      documents: scheme.documents,
+      eligibility: getTranslatedProp(scheme, 'eligibility', locale) || scheme.eligibility,
+      benefits: getTranslatedProp(scheme, 'benefits', locale) || scheme.benefits,
+      documents: getTranslatedProp(scheme, 'documents', locale) || scheme.documents,
       application_process: scheme.application_process,
       apply_link: scheme.apply_link,
       official_link: scheme.official_link,

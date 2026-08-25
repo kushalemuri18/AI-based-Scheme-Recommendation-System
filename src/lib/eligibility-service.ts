@@ -1,4 +1,4 @@
-import { buildProfileQuery, buildSchemeDocument } from '@/lib/scheme-service'
+import { buildProfileQuery } from '@/lib/scheme-service'
 import { searchSchemesByVector } from '@/lib/vector-search-service'
 import type { ExtractedUserProfile, RankedScheme, SchemeModel } from '@/types'
 
@@ -49,7 +49,7 @@ export function scoreSchemeRelevance(
   const matchedCriteria: string[] = []
   const missingInformation: string[] = []
   const disqualifyingCriteria: string[] = []
-  const filters = scheme.filters
+  const filters = scheme.filters || (scheme as any).rules || {}
   let score = Math.min(WEIGHTS.semantic, Math.round(semanticScore * WEIGHTS.semantic))
 
   const keywordScore = getKeywordScore(scheme, userQuery)
@@ -77,6 +77,9 @@ export function scoreSchemeRelevance(
     }
   } else if (filters.studentOnly) {
     missingInformation.push('student status')
+  }
+  if (profile.isStudent && (filters as any).excludeStudents) {
+    disqualifyingCriteria.push('Students are not eligible for this scheme')
   }
 
   if (profile.isFarmer) {
@@ -217,7 +220,13 @@ function getKeywordScore(scheme: SchemeModel, userQuery: string): number {
   const tokens = new Set(userQuery.toLowerCase().match(/[a-z0-9]+/g) ?? [])
   if (!tokens.size) return 0
 
-  const document = buildSchemeDocument(scheme).toLowerCase()
+  const document = [
+    scheme.scheme_name,
+    scheme.category,
+    scheme.benefits.join(' '),
+    scheme.documents.join(' '),
+    scheme.eligibility.join(' '),
+  ].join(' ').toLowerCase()
   const hits = [...tokens].filter((token) => token.length > 3 && document.includes(token)).length
   return Math.min(15, hits * 5)
 }

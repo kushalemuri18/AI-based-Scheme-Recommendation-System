@@ -59,6 +59,7 @@ export interface SchemeRules {
   areaTypes?: AreaType[]
   qualifications?: Qualification[]
   employmentStatuses?: EmploymentStatus[]
+  excludeStudents?: boolean
 }
 
 export interface Scheme {

@@ -21,15 +21,22 @@ export function ResultsPage() {
   const [activeCategory, setActiveCategory] = useState<string>('All')
 
   useEffect(() => {
-    if (!profile || results.length === 0) {
+    if (!profile) {
       const stored = sessionStorage.getItem('schemeai-results')
-      if (!stored) navigate('/check-eligibility')
+      if (!stored) {
+        navigate('/check-eligibility')
+      }
       return
     }
-    setLoadingAI(true)
-    getAIRecommendations(profile, results)
-      .then(setAiRecs)
-      .finally(() => setLoadingAI(false))
+
+    if (results.length > 0) {
+      setLoadingAI(true)
+      getAIRecommendations(profile, results)
+        .then(setAiRecs)
+        .finally(() => setLoadingAI(false))
+    } else {
+      setLoadingAI(false)
+    }
   }, [profile, results, navigate])
 
   if (!profile) return null

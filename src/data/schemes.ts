@@ -1229,7 +1229,8 @@ export const schemes: Scheme[] = [
     "officialUrl": "https://pmayg.dord.gov.in/",
     "applyUrl": "https://pmayg.dord.gov.in/",
     "rules": {
-      "incomeLimit": 500000
+      "incomeLimit": 500000,
+      "excludeStudents": true
     },
     "featured": false,
     "popularity": 70
@@ -1269,7 +1270,8 @@ export const schemes: Scheme[] = [
     "officialUrl": "https://www.mohua.gov.in/",
     "applyUrl": "https://pmaymis.gov.in/pmaymis2_2024/",
     "rules": {
-      "incomeLimit": 500000
+      "incomeLimit": 500000,
+      "excludeStudents": true
     },
     "featured": false,
     "popularity": 70
@@ -1307,7 +1309,8 @@ export const schemes: Scheme[] = [
     "officialUrl": "https://pmaymis.gov.in/pmaymis2_2024/",
     "applyUrl": "https://pmaymis.gov.in/pmaymis2_2024/",
     "rules": {
-      "incomeLimit": 500000
+      "incomeLimit": 500000,
+      "excludeStudents": true
     },
     "featured": false,
     "popularity": 70
@@ -1381,7 +1384,8 @@ export const schemes: Scheme[] = [
     "officialUrl": "https://pmaymis.gov.in/pmaymis2_2024/",
     "applyUrl": "https://pmaymis.gov.in/pmaymis2_2024/PMAY_SURVEY/EligiblityCheck.aspx",
     "rules": {
-      "incomeLimit": 500000
+      "incomeLimit": 500000,
+      "excludeStudents": true
     },
     "featured": false,
     "popularity": 70
@@ -1419,7 +1423,8 @@ export const schemes: Scheme[] = [
     "officialUrl": "https://pmaymis.gov.in/pmaymis2_2024/",
     "applyUrl": "https://pmaymis.gov.in/pmaymis2_2024/",
     "rules": {
-      "incomeLimit": 500000
+      "incomeLimit": 500000,
+      "excludeStudents": true
     },
     "featured": false,
     "popularity": 70
@@ -1451,7 +1456,8 @@ export const schemes: Scheme[] = [
     "officialUrl": "https://mohua.gov.in/",
     "applyUrl": "https://mohua.gov.in/",
     "rules": {
-      "incomeLimit": 500000
+      "incomeLimit": 500000,
+      "excludeStudents": true
     },
     "featured": false,
     "popularity": 70

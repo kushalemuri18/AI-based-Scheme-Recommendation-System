@@ -78,6 +78,12 @@ def check_rule(
         missed.append("Must be a student")
         return False
 
+    if rule_key == "excludeStudents":
+        if not rule_value or not profile["isStudent"]:
+            return True
+        missed.append("Students are not eligible for this scheme")
+        return False
+
     if rule_key == "bplOnly":
         if not rule_value or profile["bplStatus"]:
             if rule_value:

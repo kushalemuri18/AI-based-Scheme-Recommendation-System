@@ -62,7 +62,7 @@ export function SchemeCard({ scheme, result, index = 0 }: SchemeCardProps) {
               <Badge variant={result.status === 'eligible' ? 'success' : 'warning'}>
                 {result.status === 'eligible' ? t('results.eligible') : t('results.partial')}
               </Badge>
-              <span className="text-sm text-muted-foreground">{Math.round(result.score)}% match</span>
+              <span className="text-sm text-muted-foreground">AI Eligibility Score: {Math.round(result.score)}%</span>
             </div>
           )}
 
