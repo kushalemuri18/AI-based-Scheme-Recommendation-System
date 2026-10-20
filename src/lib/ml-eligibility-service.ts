@@ -45,7 +45,10 @@ export async function predictEligibility(profile: UserProfile): Promise<Eligibil
           missedCriteria: [],
         } as EligibilityResult
       })
-      .filter((res): res is EligibilityResult => res !== null)
+      .filter(
+  (res: EligibilityResult | null): res is EligibilityResult =>
+    res !== null
+)
   } catch (error) {
     console.error('Error in ML eligibility service:', error)
     throw new Error('AI eligibility service is currently unavailable. Please try again.')

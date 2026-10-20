@@ -6,9 +6,9 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { useNotifications } from '@/contexts/NotificationContext'
 import { Skeleton } from '@/components/ui/skeleton'
-import { schemes as defaultSchemes } from '@/data/schemes'
 
-const API_URL = 'http://localhost:5000/api'
+
+const API_URL = 'http://localhost:5001/api'
 
 const EMPTY_SCHEME = {
   name: '', description: '', ministry: '', category: 'Social Welfare',

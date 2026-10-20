@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { getLocalizedSchemeValue } from '@/lib/scheme-translation'
 import { useTranslation } from 'react-i18next'
 
-const API_URL = 'http://localhost:5000/api'
+const API_URL = 'http://localhost:5001/api'
 
 const CATEGORIES = [
   'all', 'Education', 'Health', 'Agriculture', 'Employment', 'Housing',

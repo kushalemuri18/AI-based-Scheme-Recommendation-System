@@ -21,7 +21,13 @@ const UserSchema = new mongoose.Schema({
   saved_schemes: [{
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Scheme'
-  }]
+  }],
+  resetPasswordOTP: {
+    type: String
+  },
+  resetPasswordOTPExpires: {
+    type: Date
+  }
 }, { timestamps: true })
 
 UserSchema.pre('save', async function(next) {

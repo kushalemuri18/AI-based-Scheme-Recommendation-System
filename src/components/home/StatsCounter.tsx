@@ -2,7 +2,7 @@ import { motion, useInView, useMotionValue, useSpring } from 'framer-motion'
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
-const API_URL = 'http://localhost:5000/api'
+const API_URL = 'http://localhost:5001/api'
 
 interface CounterProps {
   value: number

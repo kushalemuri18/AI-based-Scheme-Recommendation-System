@@ -1,0 +1,6 @@
+{
+  "watch": ["index.js", "routes/", "models/", "services/"],
+  "ext": "js,mjs",
+  "ignore": ["*.env", "*.log"],
+  "delay": "500"
+}

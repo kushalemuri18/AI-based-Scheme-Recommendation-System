@@ -10,7 +10,7 @@ import { cn } from '@/lib/utils'
 import { getLocalizedSchemeValue } from '@/lib/scheme-translation'
 import { useTranslation } from 'react-i18next'
 
-const API_URL = 'http://localhost:5000/api'
+const API_URL = '/api'
 
 export function SchemeDetailPage() {
   const { i18n } = useTranslation()
@@ -28,6 +28,19 @@ export function SchemeDetailPage() {
           const all = await res.json()
           const found = all.find((s: any) => s.slug === slug)
           setScheme(found || null)
+
+          // Check if the scheme is already saved by this user
+          const token = localStorage.getItem('token')
+          if (token && found) {
+            const savedRes = await fetch(`${API_URL}/schemes/saved/list`, {
+              headers: { Authorization: `Bearer ${token}` }
+            })
+            if (savedRes.ok) {
+              const savedList = await savedRes.json()
+              const isAlreadySaved = savedList.some((s: any) => s._id === found._id)
+              setSaved(isAlreadySaved)
+            }
+          }
         }
       } catch (err) {
         console.error(err)
@@ -41,11 +54,21 @@ export function SchemeDetailPage() {
     const token = localStorage.getItem('token')
     if (!token || !scheme) return
     try {
-      const res = await fetch(`${API_URL}/schemes/saved/${scheme._id}`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}` }
-      })
-      if (res.ok) setSaved(true)
+      if (saved) {
+        // Unsave the scheme
+        const res = await fetch(`${API_URL}/schemes/saved/${scheme._id}`, {
+          method: 'DELETE',
+          headers: { Authorization: `Bearer ${token}` }
+        })
+        if (res.ok) setSaved(false)
+      } else {
+        // Save the scheme
+        const res = await fetch(`${API_URL}/schemes/saved/${scheme._id}`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}` }
+        })
+        if (res.ok) setSaved(true)
+      }
     } catch (err) {
       console.error(err)
     }
@@ -90,9 +113,9 @@ export function SchemeDetailPage() {
               <h1 className="text-3xl font-bold">{getLocalizedSchemeValue(scheme, 'name', i18n.language)}</h1>
               <p className="mt-2 text-muted-foreground">{getLocalizedSchemeValue(scheme, 'ministry', i18n.language)}</p>
             </div>
-            <Button variant="outline" onClick={handleSave} disabled={saved}>
+            <Button variant="outline" onClick={handleSave}>
               <Bookmark className={cn('h-4 w-4', saved && 'fill-primary text-primary')} />
-              {saved ? 'Saved' : 'Save'}
+              {saved ? 'Unsave' : 'Save'}
             </Button>
           </div>
 

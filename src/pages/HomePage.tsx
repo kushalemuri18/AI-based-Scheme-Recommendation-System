@@ -8,7 +8,7 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 
-const API_URL = 'http://localhost:5000/api'
+const API_URL = 'http://localhost:5001/api'
 
 const DEFAULT_FAQS = [
   { _id: 'f1', q: 'Is this platform free to use?', a: 'Yes, SchemeAI is completely free for all Indian citizens. No hidden charges.' },

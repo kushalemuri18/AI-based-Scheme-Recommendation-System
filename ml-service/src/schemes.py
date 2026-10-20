@@ -465,7 +465,8 @@ SCHEMES: list[Scheme] = [
         "id": "deen-dayal-upadhyaya-grameen-kaushalya-yojana-ddu-gky",
         "name": "Deen Dayal Upadhyaya Grameen Kaushalya Yojana (DDU-GKY)",
         "rules": {
-            "minAge": 18
+            "minAge": 15,
+            "maxAge": 35
         },
         "featured": False,
         "popularity": 70
@@ -492,7 +493,8 @@ SCHEMES: list[Scheme] = [
         "id": "rural-self-employment-training-institutes-rsetis",
         "name": "Rural Self Employment Training Institutes (RSETIs)",
         "rules": {
-            "minAge": 18
+            "minAge": 18,
+            "maxAge": 45
         },
         "featured": False,
         "popularity": 70

@@ -29,7 +29,7 @@ const feedbackSchema = z.object({
 type ContactForm = z.infer<typeof contactSchema>
 type FeedbackForm = z.infer<typeof feedbackSchema>
 
-const API_URL = 'http://localhost:5000/api'
+const API_URL = 'http://localhost:5001/api'
 
 export function ContactPage() {
   const { addNotification } = useNotifications()

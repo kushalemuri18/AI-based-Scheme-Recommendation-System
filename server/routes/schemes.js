@@ -16,7 +16,49 @@ router.get('/', async (req, res) => {
   }
 })
 
-// Add new scheme (admin only in real world)
+// --- Saved scheme routes MUST come before /:id to avoid `:id` matching 'saved' ---
+
+// Get saved schemes for user
+router.get('/saved/list', protect, async (req, res) => {
+  try {
+    const user = await User.findById(req.user._id).populate('saved_schemes')
+    res.json(user.saved_schemes)
+  } catch (error) {
+    res.status(500).json({ message: error.message })
+  }
+})
+
+// Save a scheme
+router.post('/saved/:id', protect, async (req, res) => {
+  try {
+    const user = await User.findById(req.user._id)
+    if (!user.saved_schemes.includes(req.params.id)) {
+      user.saved_schemes.push(req.params.id)
+      await user.save()
+    }
+    res.json({ message: 'Scheme saved' })
+  } catch (error) {
+    res.status(500).json({ message: error.message })
+  }
+})
+
+// Unsave a scheme
+router.delete('/saved/:id', protect, async (req, res) => {
+  try {
+    const user = await User.findById(req.user._id)
+    user.saved_schemes = user.saved_schemes.filter(
+      (id) => id.toString() !== req.params.id
+    )
+    await user.save()
+    res.json({ message: 'Scheme unsaved' })
+  } catch (error) {
+    res.status(500).json({ message: error.message })
+  }
+})
+
+// --- Admin scheme CRUD (generic /:id routes come AFTER specific routes) ---
+
+// Add new scheme (admin only)
 router.post('/', protect, async (req, res) => {
   if (!req.user.is_admin) return res.status(403).json({ message: 'Forbidden' })
   try {
@@ -42,7 +84,7 @@ router.put('/:id', protect, async (req, res) => {
   }
 })
 
-// Delete scheme
+// Delete scheme (admin only)
 router.delete('/:id', protect, async (req, res) => {
   if (!req.user.is_admin) return res.status(403).json({ message: 'Forbidden' })
   try {
@@ -50,30 +92,6 @@ router.delete('/:id', protect, async (req, res) => {
     res.json({ message: 'Scheme removed' })
   } catch (error) {
     res.status(400).json({ message: error.message })
-  }
-})
-
-// Get saved schemes for user
-router.get('/saved/list', protect, async (req, res) => {
-  try {
-    const user = await User.findById(req.user._id).populate('saved_schemes')
-    res.json(user.saved_schemes)
-  } catch (error) {
-    res.status(500).json({ message: error.message })
-  }
-})
-
-// Save a scheme
-router.post('/saved/:id', protect, async (req, res) => {
-  try {
-    const user = await User.findById(req.user._id)
-    if (!user.saved_schemes.includes(req.params.id)) {
-      user.saved_schemes.push(req.params.id)
-      await user.save()
-    }
-    res.json({ message: 'Scheme saved' })
-  } catch (error) {
-    res.status(500).json({ message: error.message })
   }
 })
 

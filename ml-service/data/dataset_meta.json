@@ -2,7 +2,7 @@
   "num_users": 3000,
   "num_schemes": 115,
   "total_rows": 345000,
-  "eligible_rate": 0.3008782608695652,
+  "eligible_rate": 0.29509275362318843,
   "partial_rate": 0.012582608695652173,
   "columns": [
     "profile_id",

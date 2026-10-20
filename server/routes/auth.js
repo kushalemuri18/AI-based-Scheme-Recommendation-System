@@ -1,6 +1,7 @@
 import express from 'express'
 import jwt from 'jsonwebtoken'
 import User from '../models/User.js'
+import { sendOTPEmail } from '../services/emailService.js'
 
 const router = express.Router()
 
@@ -68,8 +69,97 @@ router.post('/login', async (req, res) => {
   }
 })
 
+router.post('/forgot-password', async (req, res) => {
+  const { email } = req.body
+  try {
+    const user = await User.findOne({ email })
+    if (!user) {
+      return res.status(404).json({ message: 'User not found with this email' })
+    }
+
+    // Generate a random 6-digit OTP
+    const otp = Math.floor(100000 + Math.random() * 900000).toString()
+
+    // Save to user model with 15 minutes expiration
+    user.resetPasswordOTP = otp
+    user.resetPasswordOTPExpires = Date.now() + 15 * 60 * 1000
+    await user.save()
+
+    // Log the OTP in server console
+    console.log(`[PASS RESET] OTP for user ${email}: ${otp}`)
+
+    // Send the email (real SMTP or console simulation)
+    const emailResult = await sendOTPEmail(email, otp)
+
+    res.json({
+      message: 'OTP verification code sent to your email address.'
+    })
+  } catch (error) {
+    res.status(500).json({ message: error.message })
+  }
+})
+
+router.post('/reset-password', async (req, res) => {
+  const { email, otp, password } = req.body
+  try {
+    const user = await User.findOne({ email })
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' })
+    }
+
+    if (!user.resetPasswordOTP || user.resetPasswordOTP !== otp) {
+      return res.status(400).json({ message: 'Invalid OTP' })
+    }
+
+    if (user.resetPasswordOTPExpires < Date.now()) {
+      return res.status(400).json({ message: 'OTP has expired' })
+    }
+
+    // Update password (will be hashed by pre-save hook)
+    user.password = password
+    // Clear OTP fields
+    user.resetPasswordOTP = undefined
+    user.resetPasswordOTPExpires = undefined
+    await user.save()
+
+    res.json({ message: 'Password updated successfully' })
+  } catch (error) {
+    res.status(500).json({ message: error.message })
+  }
+})
+
 router.get('/me', protect, (req, res) => {
   res.json(req.user)
+})
+
+router.post('/change-password', protect, async (req, res) => {
+  const { currentPassword, newPassword } = req.body
+  try {
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({ message: 'Current and new passwords are required' })
+    }
+
+    if (currentPassword === newPassword) {
+      return res.status(400).json({ message: 'New password must be different from current password' })
+    }
+
+    const user = await User.findById(req.user._id)
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' })
+    }
+
+    const isMatch = await user.matchPassword(currentPassword)
+    if (!isMatch) {
+      return res.status(400).json({ message: 'Invalid current password' })
+    }
+
+    user.password = newPassword
+    await user.save()
+
+    res.json({ message: 'Password changed successfully' })
+  } catch (error) {
+    res.status(500).json({ message: error.message })
+  }
 })
 
 // Get all users (admin only)

@@ -111,14 +111,10 @@ function buildSystemPrompt(intent: QueryIntent, locale: string): string {
 Your job is to answer user questions about government schemes using the retrieved scheme context.
 
 CRITICAL RULE — Answer ONLY what the user asked:
-- If the user asks about documents, list ONLY the required documents.
-- If the user asks about eligibility, explain ONLY the eligibility criteria.
-- If the user asks about benefits, describe ONLY the benefits.
-- If the user asks how to apply, explain ONLY the application process.
-- If the user asks about deadlines, state ONLY the deadline information.
-- Do NOT dump all scheme details for every question.
-- Keep responses concise and directly relevant to the question.
-- Only provide a full overview when the user asks "tell me about" or asks for "details" or "overview".`
+- Do NOT provide full details of the scheme unless the user explicitly asks for "full details", "complete overview", or "all details".
+- If the user asks a specific question (e.g., about documents, eligibility, benefits, how to apply, or deadlines), explain ONLY that specific requested aspect.
+- Do NOT include extra, unsolicited details. If they ask about documents, list ONLY the documents (do not list eligibility/benefits). If they ask about eligibility, explain ONLY eligibility (do not list documents).
+- Keep responses extremely brief, direct, and concise (typically 1-3 sentences or a short list).`
 
   const intentGuidance: Record<QueryIntent, string> = {
     documents: '\n\nThe user is asking about DOCUMENTS. List only the required documents. Do not include eligibility, benefits, or application steps.',
@@ -176,12 +172,12 @@ function buildResponseStyle(intent: QueryIntent) {
 
   return {
     rules: [
-      'Answer ONLY the specific question asked.',
-      'Do not include unrelated scheme sections.',
-      'Keep the response concise and focused.',
+      'Answer ONLY the specific question asked. Do not include other sections or details.',
+      'Do not include unrelated scheme sections or full details.',
+      'Keep the response extremely short, concise, and focused.',
       'Use only ranked_schemes as sources.',
       'Do not invent facts, amounts, dates, or links.',
-      'Include the apply/official link only when relevant to the question.',
+      'Include the apply/official link only when explicitly asked.',
     ],
   }
 }

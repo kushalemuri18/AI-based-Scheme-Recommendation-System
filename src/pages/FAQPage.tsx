@@ -3,7 +3,7 @@ import { PageHeader } from '@/components/layout/PageHeader'
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion'
 import { Skeleton } from '@/components/ui/skeleton'
 
-const API_URL = 'http://localhost:5000/api'
+const API_URL = 'http://localhost:5001/api'
 
 const DEFAULT_FAQS = [
   { _id: '1', question: 'What is SchemeAI?', answer: 'SchemeAI is a free platform that helps Indian citizens discover government schemes, scholarships, and welfare programs they are eligible for based on their personal profile.' },

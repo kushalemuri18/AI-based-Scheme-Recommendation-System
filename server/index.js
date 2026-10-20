@@ -11,14 +11,13 @@ import FAQ from './models/FAQ.js'
 import Feedback from './models/Feedback.js'
 import ContactInfo from './models/ContactInfo.js'
 import { protect } from './routes/auth.js'
-
 dotenv.config()
 
 const app = express()
 app.use(cors())
 app.use(express.json())
 
-const PORT = process.env.PORT || 5000
+const PORT = 5001
 const MONGO_URI = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/gov-schemes'
 
 mongoose.connect(MONGO_URI)
@@ -183,3 +182,4 @@ app.put('/api/contact', protect, async (req, res) => {
 })
 
 app.listen(PORT, () => { console.log(`Server running on port ${PORT}`) })
+// Touch to restart nodemon and reload environment variables

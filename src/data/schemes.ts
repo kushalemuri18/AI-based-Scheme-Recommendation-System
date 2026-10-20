@@ -1681,7 +1681,8 @@ export const schemes: Scheme[] = [
     "officialUrl": "https://rural.gov.in/",
     "applyUrl": "https://ddugky.info/",
     "rules": {
-      "minAge": 18
+      "minAge": 15,
+      "maxAge": 35
     },
     "featured": false,
     "popularity": 70
@@ -1795,7 +1796,8 @@ export const schemes: Scheme[] = [
     "officialUrl": "https://rural.gov.in/",
     "applyUrl": "https://nirdpr.org.in/",
     "rules": {
-      "minAge": 18
+      "minAge": 18,
+      "maxAge": 45
     },
     "featured": false,
     "popularity": 70

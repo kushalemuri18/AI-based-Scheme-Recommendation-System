@@ -446,11 +446,20 @@ function formatNoMatch(profile: ExtractedUserProfile, locale: string = 'en'): st
 
 function getRecommendationTitle(query: string, profile: ExtractedUserProfile, locale: string): string {
   const t = CHAT_TRANSLATIONS[locale] || CHAT_TRANSLATIONS.en
-  if (profile.isStudent || /student|scholarship|engineering|btech/i.test(query)) return t.studentTitle
-  if (profile.isFarmer || /farmer|kisan/i.test(query)) return t.farmerTitle
+
+  // 1. Query-based checks first (takes highest priority based on active search context)
+  if (/student|scholarship|engineering|btech/i.test(query)) return t.studentTitle
+  if (/farmer|kisan/i.test(query)) return t.farmerTitle
+  if (/entrepreneur|startup|business/i.test(query)) return t.startupTitle
+  if (/women|woman/i.test(query)) return t.womenTitle
+
+  // 2. Profile-based checks second
+  if (profile.isFarmer) return t.farmerTitle
+  if (profile.isStudent) return t.studentTitle
   if (profile.isWidow) return t.widowTitle
-  if (profile.isStartupOwner || /entrepreneur|startup|business/i.test(query)) return t.startupTitle
-  if (profile.gender === 'Female' || /women|woman/i.test(query)) return t.womenTitle
+  if (profile.isStartupOwner) return t.startupTitle
+  if (profile.gender === 'Female') return t.womenTitle
+
   return t.generalTitle
 }
 

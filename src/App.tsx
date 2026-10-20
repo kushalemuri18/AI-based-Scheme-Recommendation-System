@@ -38,7 +38,7 @@ function PageLoader() {
 
 function App() {
   useEffect(() => {
-    fetch('http://localhost:5000/api/schemes')
+    fetch('http://localhost:5001/api/schemes')
       .then((res) => res.json())
       .then((data) => {
         if (Array.isArray(data)) {
@@ -68,12 +68,12 @@ function App() {
                       <Route path="faq" element={<FAQPage />} />
                       <Route path="login" element={<LoginPage />} />
                       <Route path="signup" element={<SignupPage />} />
-                      
+
                       {/* Protected User Routes */}
                       <Route element={<ProtectedRoute />}>
                         <Route path="dashboard" element={<DashboardPage />} />
                       </Route>
-                      
+
                       {/* Admin Routes */}
                       <Route element={<AdminRoute />}>
                         <Route path="admin" element={<AdminPage />} />
